@@ -1,6 +1,12 @@
 {
   "rewrites": [
     { "source": "/", "destination": "/frontend/index.html" },
-    { "source": "/history", "destination": "/frontend/history.html" }
+    { "source": "/history", "destination": "/frontend/history.html" },
+    { "source": "/api/pairs", "destination": "https://indodax.com/api/pairs" },
+    {
+      "source": "/api/orderbook",
+      "has": [ { "type": "query", "key": "pair", "value": "(?<pair>[^&]+)" } ],
+      "destination": "https://indodax.com/api/depth/:pair"
+    }
   ]
 }
