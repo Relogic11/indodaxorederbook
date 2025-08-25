@@ -9,6 +9,7 @@ class handler(BaseHTTPRequestHandler):
         body = data if isinstance(data, (bytes, bytearray)) else (json.dumps(data)).encode()
         self.send_response(code)
         self.send_header("Content-Type", content_type)
+        self.send_header("Access-Control-Allow-Origin", "*")
         self.send_header("Cache-Control", "s-maxage=5, stale-while-revalidate=30")
         self.end_headers()
         self.wfile.write(body)
