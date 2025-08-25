@@ -236,17 +236,17 @@
       const urls = [];
       const sameOrigin = location.protocol.startsWith('http') ? location.origin : null;
       if (sameOrigin) {
-        urls.push(sameOrigin + '/api/orderbook?pair=' + encodeURIComponent(id));
-        if (ticker && ticker !== id) urls.push(sameOrigin + '/api/orderbook?pair=' + encodeURIComponent(ticker));
+        urls.push(sameOrigin + '/api/orderbook/' + encodeURIComponent(id));
+        if (ticker && ticker !== id) urls.push(sameOrigin + '/api/orderbook/' + encodeURIComponent(ticker));
       }
       // Other local proxies
       if (!sameOrigin || sameOrigin !== 'http://127.0.0.1:5000') {
-        urls.push('http://127.0.0.1:5000/api/orderbook?pair=' + encodeURIComponent(id));
-        if (ticker && ticker !== id) urls.push('http://127.0.0.1:5000/api/orderbook?pair=' + encodeURIComponent(ticker));
+        urls.push('http://127.0.0.1:5000/api/orderbook/' + encodeURIComponent(id));
+        if (ticker && ticker !== id) urls.push('http://127.0.0.1:5000/api/orderbook/' + encodeURIComponent(ticker));
       }
       if (!sameOrigin || sameOrigin !== 'http://localhost:5000') {
-        urls.push('http://localhost:5000/api/orderbook?pair=' + encodeURIComponent(id));
-        if (ticker && ticker !== id) urls.push('http://localhost:5000/api/orderbook?pair=' + encodeURIComponent(ticker));
+        urls.push('http://localhost:5000/api/orderbook/' + encodeURIComponent(id));
+        if (ticker && ticker !== id) urls.push('http://localhost:5000/api/orderbook/' + encodeURIComponent(ticker));
       }
 
       let data = null, lastErr = null;
