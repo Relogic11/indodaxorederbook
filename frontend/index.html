@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Order Book Indodax - Full Depth</title>
+  <style>
+    :root {
+      --bg: #0b1220;
+      --panel: #111827;
+      --panel-2: #0f172a;
+      --text: #e5e7eb;
+      --muted: #9ca3af;
+      --green: #10b981;
+      --red: #ef4444;
+      --border: #1f2937;
+      --accent: #3b82f6;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: var(--bg);
+      color: var(--text);
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+    }
+    header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+      background: linear-gradient(180deg, #0c1a36 0%, var(--panel-2) 100%);
+      position: sticky; top: 0; z-index: 10;
+    }
+    h1 { margin: 0; font-size: 18px; }
+    .sub { color: var(--muted); font-size: 12px; margin-top: 4px; }
+
+    .toolbar {
+      display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 12px;
+    }
+    .toolbar > * { background: var(--panel); border: 1px solid var(--border); color: var(--text); padding: 8px 10px; border-radius: 8px; }
+    select, input { outline: none; }
+    button { cursor: pointer; }
+
+    .container { padding: 16px; }
+    .grid { display: grid; grid-template-columns: 1fr; gap: 16px; }
+    @media (min-width: 900px) { .grid { grid-template-columns: 1fr 1fr; } }
+
+    .card { background: var(--panel-2); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+    .card header { background: transparent; padding: 12px 14px; border-bottom: 1px solid var(--border); position: static; }
+    .card h2 { margin: 0; font-size: 14px; letter-spacing: 0.3px; }
+    .count { color: var(--muted); font-size: 12px; margin-left: 6px; }
+
+    table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+    thead th { position: sticky; top: 0; background: var(--panel-2); z-index: 5; border-bottom: 1px solid var(--border); }
+    th, td { padding: 8px 10px; text-align: right; border-bottom: 1px solid var(--border); }
+    th:first-child, td:first-child { text-align: left; }
+    tbody tr:hover { background: #0b1c34; }
+
+    .asks td.price { color: var(--red); }
+    .bids td.price { color: var(--green); }
+
+    .table-wrap { max-height: 70vh; overflow: auto; }
+
+    .status { color: var(--muted); font-size: 12px; margin-left: 8px; }
+    .warning { color: #f59e0b; }
+    .ok { color: #10b981; }
+    .err { color: #ef4444; }
+    footer { padding: 12px 16px; color: var(--muted); font-size: 12px; border-top: 1px solid var(--border); }
+    a { color: var(--accent); text-decoration: none; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Order Book Indodax (Full Depth)</h1>
+    <div class="sub">Tampilkan SEMUA antrian bid/ask dari Indodax. Auto-refresh 10 detik, bisa pilih pair.</div>
+    <div class="toolbar">
+      <label>Pair: <select id="pairSelect"></select></label>
+      <button id="refreshBtn">Refresh</button>
+      <span id="status" class="status">Memuat...</span>
+    </div>
+  </header>
+
+  <div class="container">
+    <div class="grid">
+      <section class="card">
+        <header>
+          <h2>Ask (Jual) <span id="askCount" class="count"></span></h2>
+        </header>
+        <div class="table-wrap">
+          <table class="asks">
+            <thead>
+              <tr>
+                <th>No</th>
+                <th>Harga (IDR)</th>
+                <th>Jumlah</th>
+                <th>Akumulasi</th>
+              </tr>
+            </thead>
+            <tbody id="asksBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <section class="card">
+        <header>
+          <h2>Bid (Beli) <span id="bidCount" class="count"></span></h2>
+        </header>
+        <div class="table-wrap">
+          <table class="bids">
+            <thead>
+              <tr>
+                <th>No</th>
+                <th>Harga (IDR)</th>
+                <th>Jumlah</th>
+                <th>Akumulasi</th>
+              </tr>
+            </thead>
+            <tbody id="bidsBody"></tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <footer>
+    Sumber data: <a href="https://indodax.com/api/depth/" target="_blank" rel="noopener">Indodax Public REST API</a>.
+    Jika request diblokir CORS, gunakan server lokal sederhana (tersedia opsional pada file app.py).
+  </footer>
+
+  <script>
+    // Local proxy bases only (no direct calls to indodax.com to avoid CORS)
+    const API_BASES = [];
+    if (location.protocol.startsWith('http')) {
+      API_BASES.push(location.origin);
+    }
+    API_BASES.push('http://127.0.0.1:5000', 'http://localhost:5000');
+    // Deduplicate while preserving order
+    (function dedupe(){
+      const seen = new Set();
+      for (let i = API_BASES.length - 1; i >= 0; i--) {
+        const b = API_BASES[i];
+        if (seen.has(b)) API_BASES.splice(i,1); else seen.add(b);
+      }
+    })();
+    let activeBase = null; // Will be set after successful /api/pairs
+    const els = {
+      pairSelect: document.getElementById('pairSelect'),
+      refreshBtn: document.getElementById('refreshBtn'),
+      status: document.getElementById('status'),
+      asksBody: document.getElementById('asksBody'),
+      bidsBody: document.getElementById('bidsBody'),
+      askCount: document.getElementById('askCount'),
+      bidCount: document.getElementById('bidCount'),
+    };
+
+    let timer = null;
+    const REFRESH_MS = 10000; // fixed 10s
+
+    function setStatus(text, cls='') {
+      els.status.className = 'status ' + cls;
+      els.status.textContent = text;
+    }
+
+    function fmtNumber(x) {
+      const n = Number(x);
+      if (!isFinite(n)) return x;
+      return n.toLocaleString('id-ID');
+    }
+
+    function createRow(idx, price, amount, cum) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${idx}</td>
+        <td class="price">${fmtNumber(price)}</td>
+        <td>${amount}</td>
+        <td>${amount.includes('.') ? cum : fmtNumber(cum)}</td>
+      `;
+      return tr;
+    }
+
+    async function fetchJSON(url) {
+      const resp = await fetch(url, { cache: 'no-store' });
+      if (!resp.ok) throw new Error('HTTP ' + resp.status);
+      return await resp.json();
+    }
+
+    async function loadPairs() {
+      setStatus('Memuat pairs...');
+      let data = null, lastErr = null, usedBase = null;
+      for (const b of API_BASES) {
+        try {
+          data = await fetchJSON(b + '/api/pairs');
+          usedBase = b;
+          break;
+        } catch (e) {
+          lastErr = e;
+        }
+      }
+      if (!data) throw lastErr || new Error('Gagal memuat pairs');
+      activeBase = usedBase;
+      els.pairSelect.innerHTML = '';
+      data.forEach(p => {
+        const opt = document.createElement('option');
+        // p.id e.g. 'btcidr', p.ticker_id e.g. 'btc_idr'
+        opt.value = p.id; 
+        opt.textContent = p.description || p.symbol || p.id;
+        if (p.ticker_id) opt.dataset.ticker = p.ticker_id;
+        els.pairSelect.appendChild(opt);
+      });
+
+      // Default to XRPIDR if available else BTCIDR
+      const prefer = ['xrpidr','xrp_idr','XRPIDR','btcidr','btc_idr','BTCIDR'];
+      const options = Array.from(els.pairSelect.options);
+      const found = options.find(o => prefer.includes(o.value) || prefer.includes(o.dataset.ticker));
+      if (found) els.pairSelect.value = found.value;
+    }
+
+    function renderTable(tbody, rows) {
+      tbody.innerHTML = '';
+      let cum = 0;
+      rows.forEach((row, i) => {
+        const price = row[0];
+        const amount = row[1];
+        const aNum = Number(amount);
+        cum += isFinite(aNum) ? aNum : 0;
+        tbody.appendChild(createRow(i + 1, price, amount, cum));
+      });
+    }
+
+    async function loadOrderBook() {
+      const sel = els.pairSelect.options[els.pairSelect.selectedIndex];
+      const id = sel?.value || 'btcidr';
+      const ticker = sel?.dataset?.ticker;
+
+      setStatus('Mengambil order book untuk ' + (sel?.textContent || id) + '...', '');
+
+      // Build candidate URLs: try local proxy only (same-origin then other locals)
+      const urls = [];
+      const sameOrigin = location.protocol.startsWith('http') ? location.origin : null;
+      if (sameOrigin) {
+        urls.push(sameOrigin + '/api/orderbook?pair=' + encodeURIComponent(id));
+        if (ticker && ticker !== id) urls.push(sameOrigin + '/api/orderbook?pair=' + encodeURIComponent(ticker));
+      }
+      // Other local proxies
+      if (!sameOrigin || sameOrigin !== 'http://127.0.0.1:5000') {
+        urls.push('http://127.0.0.1:5000/api/orderbook?pair=' + encodeURIComponent(id));
+        if (ticker && ticker !== id) urls.push('http://127.0.0.1:5000/api/orderbook?pair=' + encodeURIComponent(ticker));
+      }
+      if (!sameOrigin || sameOrigin !== 'http://localhost:5000') {
+        urls.push('http://localhost:5000/api/orderbook?pair=' + encodeURIComponent(id));
+        if (ticker && ticker !== id) urls.push('http://localhost:5000/api/orderbook?pair=' + encodeURIComponent(ticker));
+      }
+
+      let data = null, lastErr = null;
+      for (const u of urls) {
+        try {
+          data = await fetchJSON(u);
+          lastErr = null;
+          break;
+        } catch (e) {
+          lastErr = e;
+        }
+      }
+      if (!data) throw lastErr || new Error('Gagal mengambil order book');
+
+      const asks = Array.isArray(data.sell) ? data.sell.slice() : [];
+      const bids = Array.isArray(data.buy) ? data.buy.slice() : [];
+
+      // Sort: asks ascending price, bids descending price
+      asks.sort((a, b) => Number(a[0]) - Number(b[0]));
+      bids.sort((a, b) => Number(b[0]) - Number(a[0]));
+
+      renderTable(els.asksBody, asks);
+      renderTable(els.bidsBody, bids);
+
+      els.askCount.textContent = `(${asks.length} baris)`;
+      els.bidCount.textContent = `(${bids.length} baris)`;
+      setStatus('Terakhir update: ' + new Date().toLocaleTimeString('id-ID'), 'ok');
+
+      // Try to save snapshot to history (same-origin first, then local proxies)
+      const payload = { pair: id, ts_ms: Date.now(), buy: bids, sell: asks };
+      void sendHistory(payload);
+    }
+
+    function startAutoRefresh() {
+      if (timer) clearInterval(timer);
+      timer = setInterval(() => {
+        loadOrderBook().catch(err => setStatus('Gagal memuat: ' + err.message, 'err'));
+      }, REFRESH_MS);
+    }
+
+    async function sendHistory(payload) {
+      const targets = [];
+      const sameOrigin = location.protocol.startsWith('http') ? location.origin : null;
+      if (sameOrigin) targets.push(sameOrigin + '/api/history/save');
+      if (!sameOrigin || sameOrigin !== 'http://127.0.0.1:5000') targets.push('http://127.0.0.1:5000/api/history/save');
+      if (!sameOrigin || sameOrigin !== 'http://localhost:5000') targets.push('http://localhost:5000/api/history/save');
+      for (const u of targets) {
+        try {
+          const r = await fetch(u, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) });
+          if (r.ok) return;
+        } catch {}
+      }
+    }
+
+    // Event wiring
+    els.refreshBtn.addEventListener('click', () => {
+      loadOrderBook().catch(err => setStatus('Gagal memuat: ' + err.message, 'err'));
+    });
+    els.pairSelect.addEventListener('change', () => {
+      loadOrderBook().catch(err => setStatus('Gagal memuat: ' + err.message, 'err'));
+    });
+    // Interval is fixed to 10s; no UI control
+
+    // Initialize
+    (async function init() {
+      try {
+        await loadPairs();
+        await loadOrderBook();
+        startAutoRefresh();
+      } catch (e) {
+        setStatus('Request diblokir (CORS) atau gagal memuat. ' + e.message, 'warning');
+      }
+    })();
+  </script>
+</body>
+</html>

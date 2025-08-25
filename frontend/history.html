@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>History Indodax (7 Hari)</title>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Ubuntu, Cantarell, Noto Sans, Helvetica, Arial; margin:0; background:#0b1220; color:#e5e7eb; }
+    header { padding:16px 20px; border-bottom:1px solid #1f2937; background:linear-gradient(180deg,#0c1a36 0%, #0f172a 100%); position:sticky; top:0; z-index:10; }
+    h1 { margin:0; font-size:18px; }
+    .toolbar { display:flex; flex-wrap:wrap; gap:10px; margin-top:12px; align-items:center; }
+    .toolbar > * { background:#111827; border:1px solid #1f2937; color:#e5e7eb; padding:8px 10px; border-radius:8px; }
+    button { cursor:pointer; }
+    .container { padding:16px; }
+    table { width:100%; border-collapse:collapse; font-variant-numeric:tabular-nums; }
+    th, td { padding:8px 10px; border-bottom:1px solid #1f2937; text-align:right; }
+    th:first-child, td:first-child { text-align:left; }
+    .muted { color:#9ca3af; font-size:12px; margin-left:8px; }
+    a { color:#3b82f6; text-decoration:none; }
+  </style>
+</head>
+<body>
+  <header>
+    <h1>History Indodax (7 Hari)</h1>
+    <div class="toolbar">
+      <label>Pair: <select id="pairSelect"></select></label>
+      <label>Dari: <input id="fromInput" type="datetime-local"></label>
+      <label>Sampai: <input id="toInput" type="datetime-local"></label>
+      <button id="loadBtn">Load</button>
+      <span id="status" class="muted"></span>
+      <a href="/" style="margin-left:auto">Ke Order Book</a>
+    </div>
+  </header>
+  <div class="container">
+    <table>
+      <thead>
+        <tr>
+          <th>Waktu</th>
+          <th>Best Bid</th>
+          <th>Best Ask</th>
+          <th>Spread</th>
+        </tr>
+      </thead>
+      <tbody id="rows"></tbody>
+    </table>
+  </div>
+  <script>
+    const els = {
+      pair: document.getElementById('pairSelect'),
+      from: document.getElementById('fromInput'),
+      to: document.getElementById('toInput'),
+      load: document.getElementById('loadBtn'),
+      status: document.getElementById('status'),
+      rows: document.getElementById('rows'),
+    };
+
+    function setStatus(t) { els.status.textContent = t || ''; }
+
+    function toLocalInputValue(ms) {
+      const d = new Date(ms);
+      const pad = n => String(n).padStart(2,'0');
+      return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    }
+
+    function fmt(x) { return x == null ? '-' : Number(x).toLocaleString('id-ID'); }
+
+    async function fetchJSON(url) {
+      const r = await fetch(url, { cache: 'no-store' });
+      if (!r.ok) throw new Error('HTTP ' + r.status);
+      return await r.json();
+    }
+
+    async function loadPairs() {
+      setStatus('Memuat pairs...');
+      const data = await fetchJSON('/api/pairs');
+      els.pair.innerHTML = '';
+      data.forEach(p => {
+        const opt = document.createElement('option');
+        opt.value = p.id; opt.textContent = p.description || p.symbol || p.id;
+        els.pair.appendChild(opt);
+      });
+      // default to XRPIDR or BTCIDR
+      const prefer = ['xrpidr','xrp_idr','XRPIDR','btcidr','btc_idr','BTCIDR'];
+      const options = Array.from(els.pair.options);
+      const found = options.find(o => prefer.includes(o.value));
+      if (found) els.pair.value = found.value;
+      setStatus('');
+    }
+
+    async function loadHistory() {
+      setStatus('Mengambil history...');
+      const pair = els.pair.value || 'btcidr';
+      const fromMs = els.from.value ? Date.parse(els.from.value) : (Date.now() - 7*24*60*60*1000);
+      const toMs = els.to.value ? Date.parse(els.to.value) : Date.now();
+      const url = `/api/history/list?pair=${encodeURIComponent(pair)}&from=${fromMs}&to=${toMs}&limit=1000`;
+      const data = await fetchJSON(url);
+      els.rows.innerHTML = '';
+      data.rows.forEach(row => {
+        const tr = document.createElement('tr');
+        const t = new Date(row.ts_ms).toLocaleString('id-ID');
+        tr.innerHTML = `<td>${t}</td><td>${fmt(row.best_bid)}</td><td>${fmt(row.best_ask)}</td><td>${fmt(row.spread)}</td>`;
+        els.rows.appendChild(tr);
+      });
+      setStatus(`Menampilkan ${data.count} baris`);
+    }
+
+    (function init() {
+      const now = Date.now();
+      els.to.value = toLocalInputValue(now);
+      els.from.value = toLocalInputValue(now - 7*24*60*60*1000);
+      loadPairs().then(loadHistory).catch(e => setStatus('Gagal: ' + e.message));
+      els.load.addEventListener('click', () => loadHistory().catch(e => setStatus('Gagal: ' + e.message)));
+    })();
+  </script>
+</body>
+</html>
