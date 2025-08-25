@@ -3,6 +3,7 @@
     { "source": "/", "destination": "/frontend/index.html" },
     { "source": "/history", "destination": "/frontend/history.html" },
     { "source": "/api/pairs", "destination": "https://indodax.com/api/pairs" },
-    { "source": "/api/orderbook/(.*)", "destination": "https://indodax.com/api/depth/$1" }
+    { "source": "/api/orderbook/(.*)", "destination": "https://indodax.com/api/depth/$1" },
+    { "source": "/api/history/(.*)", "destination": "https://indodaxorederbook-hvuo.vercel.app/api/history/$1" }
   ]
 }
